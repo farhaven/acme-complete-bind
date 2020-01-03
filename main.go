@@ -53,6 +53,7 @@ func handleWindow(winId int) {
 	win, err := acme.Open(winId, nil)
 	if err != nil {
 		log.Printf("can't open window %d: %s", winId, err)
+		return
 	}
 	defer win.CloseFiles()
 
@@ -63,7 +64,6 @@ func handleWindow(winId int) {
 	} else {
 		name := string(bytes.SplitN(tag, []byte(" "), 2)[0])
 		if dontHandleWindow(string(name)) {
-			log.Printf("not handling window %d: it's name (%q) looks like a utility or directory window", winId, name)
 			return
 		}
 	}
@@ -84,7 +84,7 @@ func handleWindow(winId int) {
 			// ^O entered by user with keyboard
 			err := handleCompletionEvent(win, e)
 			if err != nil {
-				log.Println("failed to handle completion event:", err)
+				log.Println("failed to handle completion request:", err)
 			}
 			continue
 		}
@@ -97,20 +97,12 @@ func handleWindow(winId int) {
 			}
 			continue
 		}
-
-		if e.C1 == 'K' || e.C1 == 'M' {
-			continue
-		}
-
-		log.Printf("unhandled event: C='%c%c' %#+v (text: %q)", e.C1, e.C2, e, string(e.Text))
 	}
 
 	log.Println("event channel closed, done handling window", winId)
 }
 
 func main() {
-	log.Println("Here we go")
-
 	// Start key handler for all existing windows
 	acmeWindows, err := acme.Windows()
 	if err != nil {
@@ -119,10 +111,8 @@ func main() {
 
 	for _, win := range acmeWindows {
 		if dontHandleWindow(win.Name) {
-			log.Println("not handling utility or directory window", win.Name)
 			continue
 		}
-		log.Printf("starting command handler for window %d (named %q)", win.ID, win.Name)
 		go handleWindow(win.ID)
 	}
 
@@ -138,7 +128,6 @@ func main() {
 			log.Println("can't read event from ACME log:", err)
 		}
 		if event.Op != "new" {
-			log.Println("unhandled event:", event)
 			continue
 		}
 		go handleWindow(event.ID)
