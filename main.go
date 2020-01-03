@@ -69,10 +69,7 @@ func handleWindow(winId int) {
 		}
 	}
 
-	events := win.EventChan()
-
-	log.Println("handling events for window", winId)
-	for e := range events {
+	for e := range win.EventChan() {
 		if e.C1 == 'F' && e.C2 == 'i' && dontHandleWindow(string(e.Text)) {
 			log.Println("window got turned into an utility or directory window, going away")
 			return
@@ -99,8 +96,6 @@ func handleWindow(winId int) {
 			continue
 		}
 	}
-
-	log.Println("event channel closed, done handling window", winId)
 }
 
 func main() {
