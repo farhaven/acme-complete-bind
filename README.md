@@ -4,7 +4,7 @@ text.
 
 # Installation
 * Install `acme-lsp` and a few language servers of your choice
-* Run `go install https://github.com/farhaven/acme-complete-bind`.
+* Run `GO111MODULE=on go get github.com/farhaven/acme-complete-bind@latest`.
 
 After the installation, run the command `acme-complete-bind`. It does not take any parameters and only outputs log messages if something goes wrong.
 
