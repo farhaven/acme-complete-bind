@@ -13,4 +13,4 @@ ACME needs to be running before starting `acme-complete-bind`.
 # Usage
 In a text buffer, enter `^O`, that is, press the `O` key with the control key held. This should run `L comp -e`.
 
-If instead of completions, you get a little picture of some guys head, you should make sure that `acme-complete-bind` is indeed running and that it can connect to your ACME instance via 9p. If that does not help, please open an issue in the bug tracker for this repository.
+If instead of completions, you get a little picture of some guys head, you should make sure that `acme-complete-bind` is indeed running and that it can connect to your ACME instance via 9p by running `9p ls acme`. If that does not help, please open an issue in the bug tracker for this repository.
