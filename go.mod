@@ -1,4 +1,4 @@
-module github.com/farhaven/acme-things
+module github.com/farhaven/acme-complete-bind
 
 go 1.13
 

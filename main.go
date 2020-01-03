@@ -1,66 +1,146 @@
 package main
 
 import (
-	"log"
 	"bytes"
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
-	"fmt"
+	"path"
+	"strings"
 
 	"9fans.net/go/acme"
 )
 
-const _WinID = 97
+func handleCompletionEvent(win *acme.Win, event *acme.Event) error {
+	// Remove entered character from text, then run completion
+	win.Addr("#%d,#%d", event.Q0, event.Q1)
+	win.Write("data", []byte(""))
+
+	// Run `L comp -e` in "From ACME" mode by setting the $winid appropriately
+	lpath, err := exec.LookPath("L")
+	if err != nil {
+		return err
+	}
+	lenv := os.Environ()
+	lenv = append(lenv, fmt.Sprintf("winid=%d", win.ID()))
+	cmd := exec.Cmd{
+		Env:  lenv,
+		Path: lpath,
+		Args: []string{"L", "comp", "-e"},
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("can't run completion: %w (output: %s)", err, string(output))
+	}
+	// Write completion output to error window
+	if len(output) != 0 {
+		win.Err(string(output))
+	}
+
+	return nil
+}
+
+// dontHandleWindow returns true if the window should not be handled. This happens if the name of the window
+// - indicates that it is a utility window (file name starts with - or +)
+// - indicates that it is a directory (file name ends with /)
+func dontHandleWindow(name string) bool {
+	base := path.Base(name)
+	return strings.HasPrefix(base, "-") || strings.HasPrefix(base, "+") || strings.HasSuffix(name, "/")
+}
+
+func handleWindow(winId int) {
+	win, err := acme.Open(winId, nil)
+	if err != nil {
+		log.Printf("can't open window %d: %s", winId, err)
+	}
+	defer win.CloseFiles()
+
+	tag := make([]byte, 1024)
+	_, err = win.Read("tag", tag)
+	if err != nil {
+		log.Println("can't read window tag:", err)
+	} else {
+		name := string(bytes.SplitN(tag, []byte(" "), 2)[0])
+		if dontHandleWindow(string(name)) {
+			log.Printf("not handling window %d: it's name (%q) looks like a utility or directory window", winId, name)
+			return
+		}
+	}
+
+	events := win.EventChan()
+
+	log.Println("handling events for window", winId)
+	for e := range events {
+		if e.C1 == 'F' && e.C2 == 'i' && dontHandleWindow(string(e.Text)) {
+			log.Println("window got turned into an utility or directory window, going away")
+			return
+		}
+
+		// Re-enable automatic menu
+		win.Write("ctl", []byte("menu"))
+
+		if e.C1 == 'K' && e.C2 == 'I' && bytes.Equal(e.Text, []byte{0x0f}) {
+			// ^O entered by user with keyboard
+			err := handleCompletionEvent(win, e)
+			if err != nil {
+				log.Println("failed to handle completion event:", err)
+			}
+			continue
+		}
+
+		if e.C2 == 'x' || e.C2 == 'X' || e.C2 == 'l' || e.C2 == 'L' {
+			// Tell ACME to handle the event itself
+			err = win.WriteEvent(e)
+			if err != nil {
+				log.Println("can't write event:", err)
+			}
+			continue
+		}
+
+		if e.C1 == 'K' || e.C1 == 'M' {
+			continue
+		}
+
+		log.Printf("unhandled event: C='%c%c' %#+v (text: %q)", e.C1, e.C2, e, string(e.Text))
+	}
+
+	log.Println("event channel closed, done handling window", winId)
+}
 
 func main() {
 	log.Println("Here we go")
-	w, err := acme.Open(_WinID, nil)
+
+	// Start key handler for all existing windows
+	acmeWindows, err := acme.Windows()
 	if err != nil {
-		log.Fatalln("can't open window", _WinID, ":", err)
+		log.Fatalln("can't get list of ACME windows:", err)
 	}
 
-	events := w.EventChan()
-
-	for e := range events {
-		if e.C1 != 'K' {
-			// Not a "keyboard" event
+	for _, win := range acmeWindows {
+		if dontHandleWindow(win.Name) {
+			log.Println("not handling utility or directory window", win.Name)
 			continue
 		}
-		if e.C2 != 'I' {
-			// Not an "input" event
-			continue
-		}
+		log.Printf("starting command handler for window %d (named %q)", win.ID, win.Name)
+		go handleWindow(win.ID)
+	}
 
+	acmeLog, err := acme.Log()
+	if err != nil {
+		log.Fatalln("Can't open ACME log")
+	}
+	defer acmeLog.Close()
 
-		if !bytes.Equal(e.Text, []byte{0x0f}) {
-			continue
-		}
-		// ^O entered
-
-		log.Printf("Text entered: %#+v", e)
-
-		// Remove entered character from text, then run completion
-		w.Addr("#%d,#%d", e.Q0, e.Q1)
-		w.Write("data", []byte(""))
-
-		// Run `L comp -e` in "From ACME" mode by setting the $winid appropriately
-		lpath, err := exec.LookPath("L")
+	for {
+		event, err := acmeLog.Read()
 		if err != nil {
-			log.Println("Can't find `L` command:", err)
+			log.Println("can't read event from ACME log:", err)
+		}
+		if event.Op != "new" {
+			log.Println("unhandled event:", event)
 			continue
 		}
-		lenv := os.Environ()
-		lenv = append(lenv, fmt.Sprintf("winid=%d", _WinID))
-		cmd := exec.Cmd{
-			Env: lenv,
-			Path: lpath,
-			Args: []string{"L", "comp", "-e"},
-		}
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Println("Failed to run L command:", err)
-			log.Println("Output of L:", string(output))
-			continue
-		}
+		go handleWindow(event.ID)
 	}
 }
