@@ -121,7 +121,7 @@ func main() {
 	for {
 		event, err := acmeLog.Read()
 		if err != nil {
-			log.Println("can't read event from ACME log:", err)
+			log.Fatalln("can't read event from ACME log:", err)
 		}
 		if event.Op != "new" {
 			continue
